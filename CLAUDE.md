@@ -92,6 +92,12 @@ No Gold/marts work proceeds without architecture sign-off. Full doctrine + veto 
 `.claude/agents/data-architect.md`.
 
 ## Repo map (beyond architecture/)
+- `MIGRATION_MAP.md` — the binding file-by-file port plan from the sibling repo's real working
+  code (5 scripts, 18 dbt models, 1 DAG, config) to Fabric: per-file treatment
+  (RETAIN/REPLATFORM/REFACTOR/REBUILD/RETIRE), the construct translation table (dbt→Fabric,
+  S3→OneLake, DuckDB-SQL→T-SQL, Airflow→Data Factory), and a 28-item port checklist. **F1-F3
+  work this file** — read the named source file in `../creative_intelligence_lab/` before
+  writing each Fabric target; the map says what changes, the source file is still the logic.
 - `SESSION_LOG.md` — the owner's verbatim cross-session constraints (Sonnet-only, no-codespace-
   until-pushed, etc.) + a dated, honest shortcuts/gaps record (e.g. the F0 pass shipped docs
   only, zero ported pipeline code). Read this alongside `PROJECT_STATUS.md` — that one is the

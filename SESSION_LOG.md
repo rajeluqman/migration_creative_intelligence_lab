@@ -91,3 +91,22 @@ architecture and the *rules* a future build must satisfy (lineage/boundary contr
 verify green); it does not yet contain a Fabric implementation of anything the sibling repo
 already runs for real. See `PROJECT_STATUS.md` "What's NOT done yet" for the F1–F4 checklist
 this now points to.
+
+## 2026-06-24 — MIGRATION_MAP.md authored (port plan, owner-requested)
+
+Owner (on Opus) asked for a full original-vs-migration file diff, a justification of why the
+F0/Sonnet pass missed so much, and a decision on port-vs-rebuild. Outcome:
+- **Diff:** 99 tracked files in the sibling repo vs 63 here → 36 missing (5 scripts, 18 dbt
+  models, 1 DAG, build/config, analyses; ~1,522 lines of real code), 3 added (ADR-008,
+  SESSION_LOG, README.md.orig).
+- **Root cause (evidence-backed):** the F0 "copy apparatus verbatim" step was scoped to
+  docs/governance only and never included code (proof: F0 commit `c9f10a4` touched no
+  `scripts/`/`models/`/`dags/`; `boundary_contract.py` scans `notebooks/`+`warehouse/` dirs
+  that don't exist — the migration was framed as "build fresh later", never "port"). The plan
+  had a "copy" step and a "build later" step but **no "translate" step**, so the code — which
+  needed translation, not copying — fell in the gap. Token-discipline rules + the Sonnet
+  cost-saving choice amplified it (no repo diff was ever run until the owner said "recheck").
+- **Decision:** port, not rebuild (rebuild-from-scratch would re-incur the bugs/rulings the
+  sibling repo already paid for). Wrote `MIGRATION_MAP.md` (read every source file first, not
+  from memory) as the binding 28-item port checklist. Port sessions confirmed **Sonnet**, with
+  `MIGRATION_MAP.md` as the strict checklist to prevent a repeat miss.

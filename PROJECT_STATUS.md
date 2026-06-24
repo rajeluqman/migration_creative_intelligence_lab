@@ -57,10 +57,14 @@ milestone, not a working pipeline.
   appropriate: dropped `*.duckdb`/`dbt_packages/`/`venv_airflow/`, added notebook checkpoint
   dirs) all written fresh for this repo.
 
-## What's NOT done yet — concrete port checklist (see `SESSION_LOG.md` 2026-06-24 "Honest gap
-audit" for the full admission: this repo is 100% docs/governance, 0% ported pipeline code. The
-sibling repo is NOT a template — it has a real, working v1 build. Below is a per-file port list,
-not a "write from scratch" list.)
+## What's NOT done yet — concrete port checklist
+
+> **The authoritative, binding version of this checklist is `MIGRATION_MAP.md`** (28 items,
+> per-file treatment + construct translation table + parity-test gate, written 2026-06-24 by
+> reading every source file). The summary below is a pointer; work from `MIGRATION_MAP.md`.
+> See `SESSION_LOG.md` 2026-06-24 "Honest gap audit" for why this gap existed: the F0 pass
+> shipped 100% docs/governance, 0% ported pipeline code. The sibling repo is NOT a template —
+> it has a real, working v1 build. This is a per-file PORT list, not a "write from scratch" list.
 
 - **F1 — port `scripts/*.py` → Fabric notebooks/scripts:**
   - `scripts/ingest_drive_to_s3.py` (250 lines, real) → Drive→OneLake notebook/script: swap
