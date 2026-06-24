@@ -92,6 +92,10 @@ No Gold/marts work proceeds without architecture sign-off. Full doctrine + veto 
 `.claude/agents/data-architect.md`.
 
 ## Repo map (beyond architecture/)
+- `SESSION_LOG.md` — the owner's verbatim cross-session constraints (Sonnet-only, no-codespace-
+  until-pushed, etc.) + a dated, honest shortcuts/gaps record (e.g. the F0 pass shipped docs
+  only, zero ported pipeline code). Read this alongside `PROJECT_STATUS.md` — that one is the
+  technical checkpoint, this one is the decision record. Append-only.
 - `BACKLOG.md` — v2-deferred items + the gym-apparatus-port ruling (cheatsheets/learning kept
   as templates, gym agents/incubator rejected — see `AGENT_ROSTER_RECOMMENDATION.md`)
 - `debate/` — original cabinet convene record (pre-Fabric): `00_AGENDA.md` (contested
@@ -134,8 +138,12 @@ See `README_BUILD.md`. Short version:
    `FABRIC_LAKEHOUSE` (`creative_intel_lh`)
 3. Open the Fabric workspace, attach the Lakehouse — no local `profiles.yml` equivalent;
    Bronze/Silver notebooks and Gold Warehouse views run inside the Fabric capacity
-4. Implement stubs marked `TODO` from `architecture/SPEC_*` in `notebooks/` (Bronze/Silver,
-   F1) and `warehouse/` (Gold T-SQL views, F2)
+4. **Port, don't freehand**: `notebooks/` (Bronze/Silver, F1) and `warehouse/` (Gold T-SQL
+   views, F2) are translations of the sibling repo's real, working `scripts/*.py` and
+   `models/**/*.sql` — read the source file before writing the Fabric equivalent (see
+   `PROJECT_STATUS.md`'s file-by-file port checklist + `SESSION_LOG.md`'s honest-gap entry);
+   only `architecture/SPEC_*` stubs with no sibling-repo source (e.g.
+   `significance_post_step.py`) get built fresh
 5. Run notebooks in pipeline order (see `STACK_AND_FLOW.md` §2), then the significance step (v1.5)
 
 ## Token Discipline (all agents + main session)
@@ -151,7 +159,9 @@ See `README_BUILD.md`. Short version:
 not yet present; add to `.gitignore` when they first appear).
 
 **Intentionally committed** (unlike the parent gym pattern this project borrowed agents
-from): `CLAUDE.md`, `PROJECT_STATUS.md`, `learning/LEARNING_LOG.md` — this is a standalone,
-self-contained repo by design; see `PROJECT_STATUS.md` "Standalone status". Fabric-specific
-secrets (service principal client secret, Fabric capacity/tenant IDs used for auth) go in
-`.env`, same rule as `GEMINI_API_KEY` — never committed.
+from): `CLAUDE.md`, `PROJECT_STATUS.md`, `SESSION_LOG.md`, `learning/LEARNING_LOG.md` — this is
+a standalone, self-contained repo by design; see `PROJECT_STATUS.md` "Standalone status".
+`SESSION_LOG.md` carries the owner's verbatim cross-session constraints and a dated, honest
+shortcuts/gaps record — append-only, same "never retroactively edit" rule as `debate/`. Fabric-
+specific secrets (service principal client secret, Fabric capacity/tenant IDs used for auth) go
+in `.env`, same rule as `GEMINI_API_KEY` — never committed.

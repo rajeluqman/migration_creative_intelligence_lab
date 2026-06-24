@@ -1,6 +1,8 @@
 # PROJECT STATUS — Creative Intelligence Pipeline (Microsoft Fabric Migration)
 
-> Resume checkpoint. Read this BEFORE reading code (token discipline, CLAUDE.md).
+> Resume checkpoint. Read this BEFORE reading code (token discipline, CLAUDE.md). Read
+> `SESSION_LOG.md` too — it has the owner's verbatim constraints and a dated, honest account of
+> this migration's shortcuts; this file is the technical checkpoint, that one is the decision record.
 > This repo is the Fabric migration of `creative_intelligence_lab` (sibling repo, DuckDB/dbt/S3
 > build). See that repo's `PROJECT_STATUS.md` for the real Drive-run build history — none of it
 > is repeated here; this checkpoint only covers what changed in **this** repo.
@@ -55,17 +57,47 @@ milestone, not a working pipeline.
   appropriate: dropped `*.duckdb`/`dbt_packages/`/`venv_airflow/`, added notebook checkpoint
   dirs) all written fresh for this repo.
 
-## What's NOT done yet (deferred, not started this session)
-- **F1 — `notebooks/` + `scripts/` + `requirements.txt` + `setup.sh`.** The actual Drive→OneLake
-  ingest, Bronze/Silver PySpark notebooks, and the scaffold script that generates them. Both
-  `CLAUDE.md` and `README_BUILD.md` already document `bash setup.sh` as step 1 — the script
-  itself does not exist yet. `.env.example` also does not exist yet (needs `FABRIC_WORKSPACE`,
-  `FABRIC_LAKEHOUSE`, `GEMINI_API_KEY`, no `S3_BUCKET`/`AWS_*`).
-- **F2 — `warehouse/` Gold T-SQL views** (`fact_chunk`, `dim_asset`, the bridge tables, the
-  performance marts) over a OneLake shortcut.
-- **F3 — `pipelines/creative_intel_fabric.json`** (Fabric Data Factory orchestration pipeline).
+## What's NOT done yet — concrete port checklist (see `SESSION_LOG.md` 2026-06-24 "Honest gap
+audit" for the full admission: this repo is 100% docs/governance, 0% ported pipeline code. The
+sibling repo is NOT a template — it has a real, working v1 build. Below is a per-file port list,
+not a "write from scratch" list.)
+
+- **F1 — port `scripts/*.py` → Fabric notebooks/scripts:**
+  - `scripts/ingest_drive_to_s3.py` (250 lines, real) → Drive→OneLake notebook/script: swap
+    `boto3` S3 writes for OneLake `Files/` writes (abfss path grammar, ADR-008); content-hash +
+    `asset_id` formula (ADR-006) is unchanged logic, port as-is.
+  - `scripts/run_gemini_extract.py` (238 lines, real) → Gemini call logic ports unchanged
+    (model-agnostic to storage); only the Bronze write target changes (S3 → OneLake `Files/`).
+  - `scripts/enforce_landing_ttl.py` (115 lines, real) → port the guarded-delete logic; ADR-007's
+    Status header already says the mechanism becomes a OneLake-targeting Fabric
+    notebook/pipeline, not a bare lifecycle rule.
+  - `scripts/env_guard.py` (16 lines) → swap the `S3_BUCKET` check for `FABRIC_WORKSPACE`/
+    `FABRIC_LAKEHOUSE`.
+  - `scripts/significance_post_step.py` — still a 3-line TODO stub in the sibling repo too;
+    nothing to port, build fresh per `SPEC_v1.5_performance_marts.md` §6 when F2 lands.
+  - `setup.sh` (546 lines) → needs a Fabric-equivalent scaffold script (notebooks/ + warehouse/
+    stubs instead of models/+dbt config); `requirements.txt`, `.env.example` (`FABRIC_WORKSPACE`,
+    `FABRIC_LAKEHOUSE`, `GEMINI_API_KEY`, no `S3_BUCKET`/`AWS_*`) port with light edits.
+- **F2 — port `models/**/*.sql` (18 files) → `warehouse/**/*.sql` Gold T-SQL views:**
+  some are real builds, not stubs (e.g. `models/marts/performance/bridge_ad_chunk.sql` has a
+  full EDL join, not `where 1=0`) — read each one before rewriting, don't assume stub status.
+  Every `{{ ref(...) }}` becomes a plain object name (no dbt); DuckDB/Postgres-only syntax
+  (`unnest()`, `::type` casts seen in the SPEC docs' own snippets) needs real T-SQL translation,
+  not just the disclaimer note current SPEC docs carry — **unverified against a real Fabric
+  Warehouse**, test this for real once a workspace exists.
+  - Also port: `analyses/demo_queries.sql` (has real query content in the sibling repo, not
+    empty — read it before writing this repo's version).
+- **F3 — port `dags/creative_intel_pipeline.py`** (136 lines, real) → `pipelines/
+  creative_intel_fabric.json` (Fabric Data Factory). This is a structural translation (Airflow
+  DAG/operator graph → Data Factory pipeline/activity graph), not a line-for-line port — read
+  the DAG's actual task dependencies and retry/backoff config before designing the activities.
 - **F4 — Serving**: Power BI Direct Lake + Fabric Copilot/Azure OpenAI QA veneer, wired only
-  after Gold has real rows (mirrors the sibling repo's ADR-005 sequencing discipline).
+  after Gold has real rows (mirrors the sibling repo's ADR-005 sequencing discipline). No
+  sibling-repo equivalent to port — this layer is new in the Fabric build.
+- **Cross-cutting, do before/during F1-F3:** every Fabric-specific syntax/capability claim in
+  `architecture/SPEC_v1_search.md`, `SPEC_v1.5_performance_marts.md`, and `STACK_AND_FLOW.md`
+  is unverified against a real Fabric Warehouse/notebook — confirm or correct each one as F1-F3
+  actually run, don't assume the docs are right just because they're internally consistent.
 
 ## F0 closeout — 2026-06-24
 - `python tests/lineage_contract.py` and `python tests/boundary_contract.py` both run clean
@@ -100,11 +132,21 @@ layer). Fixed, same surgical-edit-not-restructure rule:
   exists in this repo to have inherited that test from.
 - Both contracts re-verified green after every batch of fixes, not just once at the end.
 
+## Push status — 2026-06-24 (IMPORTANT, read before assuming anything is live)
+`origin/main` has only the first F0 commit. **Two more commits exist locally and are NOT
+pushed**: the gap-recheck patch (15 files) and this round (`SESSION_LOG.md` + this checklist +
+the honest-gap audit). The codespace's GitHub token is scoped to the *other* repo
+(`creative_intelligence_lab`) and cannot push here; a owner-provided PAT also got blocked by
+the harness's own credential-leak guard (embedding any secret in a command is now refused
+outright, not just flagged after the fact). **The owner must push these commits themselves**
+— from their own machine, or once they open the Fabric codespace on this repo (which will have
+correctly-scoped credentials).
+
 ## Next step when resuming
-1. Commit + push this gap-fix patch to
-   `https://github.com/rajeluqman/migration_creative_intelligence_lab`.
-2. Owner creates the Fabric workspace + codespace themselves, then F1 begins
-   (notebooks/scripts/setup.sh/requirements.txt/.env.example).
+1. **Owner pushes the 2 pending local commits** (gap-fix patch + this SESSION_LOG round) —
+   agent cannot do this (see "Push status" above).
+2. Owner creates the Fabric workspace + codespace themselves, then F1 begins — work the port
+   checklist above file-by-file, reading each sibling-repo source file before translating it.
 
 ## Standalone status
 Self-contained, same as the sibling repo — `CLAUDE.md` + 8 agents present; no parent/gym
