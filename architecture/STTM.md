@@ -69,7 +69,7 @@ actually happens at that hop; "verbatim" means explicitly no transform.
 | `chunk_theme` | `chunk_theme` | `chunk_theme` | passthrough |
 | `sentiment` | `sentiment` | `sentiment` | passthrough, enum-gated |
 | `standalone_score` | `standalone_score` | `standalone_score` | passthrough, range-gated 1–5 |
-| — | — | `embedding` | v1.5 addition, BYO Gemini embedding generated in ELT (`architecture/ADR-005-unified-s3-and-snowflake-serving.md`) — **not** a source-field passthrough |
+| — | — | `embedding` | reserved/nullable column, populated by nothing in this repo's locked stack — semantic vector search is OUT (no in-stack vector index; `architecture/SPEC_v1_search.md` §1, ADR-008 Binding Condition 4) — **not** a source-field passthrough |
 
 > **`client_id` is deliberately NOT a target column on `fact_chunk`** (ADR-006 / Clean-ERD
 > axis 4). Client scope is reached by join `fact_chunk.asset_id → dim_asset.client_id`; if a
@@ -114,7 +114,7 @@ actually happens at that hop; "verbatim" means explicitly no transform.
 |-----|--------|
 | Source | `bronze_ad_performance_raw` |
 | Transform | `stg_meta` + `stg_tiktok` → union (`architecture/STACK_AND_FLOW.md` §2); raw counts only, no ratio derived here |
-| `asset_id` join | Manual seed `map_ad_asset.csv` (`ad_id` → `asset_id`), enforced by a dbt `relationships` test — **not** a Gemini-derived field |
+| `asset_id` join | Manual seed `map_ad_asset.csv` (`ad_id` → `asset_id`), enforced by a GE referential check (no dbt — dbt is dropped, ADR-008) — **not** a Gemini-derived field |
 
 ## Target: `dim_platform` (Gold)
 

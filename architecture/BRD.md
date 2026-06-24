@@ -71,7 +71,8 @@ v1 = the queryable creative feature store only, per `CLAUDE.md` "v1 Scope (LOCKE
 - Creative-ops analytics dashboard
 - Automated tagging / asset archiving
 - ROAS / ad-performance ingestion beyond the within-winners correlation layer (v1.5 only)
-- Dedicated vector DB (DuckDB VSS covers v1.5 semantic search)
+- Dedicated vector DB (attribute-filtered T-SQL Warehouse views over Direct Lake cover v1
+  search; Fabric Copilot/Azure OpenAI is a QA/summarization veneer, not a vector index — ADR-008)
 - Perceptual/fuzzy near-duplicate dedup (the model's answer is content-hash + a flagged
   signal, not auto-merge — see `architecture/DATA_MODEL.md` §4)
 
@@ -100,8 +101,9 @@ north-star query depends on) — worth watching once Gold has real rows, no thre
 
 No production SLA. This is a batch, on-demand pipeline run (not a live system with
 paying-customer uptime commitments) — stated honestly rather than fabricated. The closest
-operational commitment is the cost firewall above (§6) and the FinOps Snowflake teardown
-discipline in `architecture/ADR-005-unified-s3-and-snowflake-serving.md`.
+operational commitment is the cost firewall above (§6) and the FinOps discipline around the
+Fabric capacity SKU (pause/teardown when idle — `architecture/ADR-008-migrate-to-microsoft-fabric.md`,
+`.claude/agents/finops-agent.md`; supersedes ADR-005's Snowflake-trial teardown framing).
 
 ## 8. Sign-off Gate
 

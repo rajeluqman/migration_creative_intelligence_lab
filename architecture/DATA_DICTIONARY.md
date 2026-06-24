@@ -4,10 +4,11 @@
 **Owner:** @data-architect
 **Status:** DRAFT — pending review
 **Date:** 2026-06-22
-**Audience:** marketing/creative team and Power BI consumers of the Snowflake Cortex
-serving veneer (`architecture/ADR-005-unified-s3-and-snowflake-serving.md`) — a different
-audience, at a different altitude, than `architecture/DATA_MODEL.md` (structural/FK/grain)
-or `architecture/ERD_consolidated.md` (cardinality/SCD).
+**Audience:** marketing/creative team and Power BI Direct Lake consumers of the Fabric
+serving layer (`architecture/ADR-008-migrate-to-microsoft-fabric.md`, supersedes
+`ADR-005-unified-s3-and-snowflake-serving.md`) — a different audience, at a different
+altitude, than `architecture/DATA_MODEL.md` (structural/FK/grain) or
+`architecture/ERD_consolidated.md` (cardinality/SCD).
 
 > **Precedence rule (binding):** if this dictionary ever disagrees with
 > `architecture/ERD_consolidated.md` or `architecture/DATA_MODEL.md` on a column's
@@ -44,8 +45,8 @@ two clients' identical stock footage from being treated as the same video.
 | `asset_type` | `RAW` (untouched source footage) or `EDITED` (a finished ad). |
 | `duration_sec` | Length of the video. |
 | `source_uri` | Where the original file lives (for playback) — not the analytical data itself. **Note:** the original file may be cleaned up after `landing_ttl_days` (ADR-007); the analytical data survives, but the playable source may not. |
-| `ingested_at` | **Provenance** — when this video's bytes actually landed in S3 from Drive. Immutable, write-once at landing; never recomputed on re-parse. Distinct from `load_ts` (below), which is an **audit** timestamp of when this row was last rebuilt by dbt — `load_ts` changes on every rebuild, `ingested_at` never does. |
-| `load_ts` | **Audit** — when this dimension row was last materialized by `dbt build`. Not provenance; do not use this to answer "when was this asset ingested" (see `ingested_at`). |
+| `ingested_at` | **Provenance** — when this video's bytes actually landed in OneLake from Drive. Immutable, write-once at landing; never recomputed on re-parse. Distinct from `load_ts` (below), which is an **audit** timestamp of when this row was last rebuilt — `load_ts` changes on every rebuild, `ingested_at` never does. |
+| `load_ts` | **Audit** — when this dimension row was last materialized by the Gold Warehouse view's refresh (no dbt build — dbt is dropped, ADR-008). Not provenance; do not use this to answer "when was this asset ingested" (see `ingested_at`). |
 | `dq_flag` | Flags a likely near-duplicate of another asset (within the same client). Informational only — assets are never auto-merged. |
 
 ## `fact_chunk` — one row per semantic "beat" inside a video

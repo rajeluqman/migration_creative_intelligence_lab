@@ -3,7 +3,12 @@
 **Status:** Draft for build · **Owner:** @senior-data-engineer + @analytics-engineer
 **Authority:** `DATA_MODEL_v1.5_PERFORMANCE.md` (ratified 2026-06-20) — this spec implements it,
 does not change it. **Honesty gates (§7) are release blockers** owned by @data-quality-steward.
-**Engine:** DuckDB + dbt-duckdb (per v1 stack). SQL is DuckDB dialect.
+**Engine (ADR-008, Fabric build):** PySpark notebooks (Bronze→Silver, the `stg_*`/`int_*`
+conform+union steps below) + Fabric Warehouse T-SQL `VIEW`s (Gold, `fact_ad_performance` onward)
+over a OneLake shortcut. No dbt — object names below are notebook cells / T-SQL views, not
+dbt models, and `{{ ref(...) }}` is replaced by plain object names throughout. SQL snippets
+below illustrate logic, not final syntax — exact T-SQL (`CAST` vs `::`, etc.) is finalized
+when the Gold Warehouse views are actually built (F2).
 
 ---
 
@@ -29,10 +34,11 @@ bronze_ad_performance_raw (Meta CSV)      bronze_ad_performance_raw (TikTok CSV)
         mart_chunk_perf_correlation        (platform × metric × feature → n_ads, median, regime)  ← SURFACED
 ```
 
-> **Decision boundary:** SQL marts produce grouped aggregates + `sample_size` + a directional
+> **Decision boundary:** T-SQL marts produce grouped aggregates + `sample_size` + a directional
 > rank. The **statistical significance test** (Spearman / Mann-Whitney U + Bonferroni) is a
-> thin **Python post-step** (DuckDB → pandas → scipy) that only runs for the `SUGGESTIVE`
-> tier — SQL does not compute p-values. See §6.
+> thin **Python post-step** (`scripts/significance_post_step.py`, a Fabric notebook: Warehouse
+> query → pandas → scipy) that only runs for the `SUGGESTIVE` tier — SQL does not compute
+> p-values. See §6.
 
 ---
 
@@ -61,10 +67,10 @@ play_count` at staging so the fact stores a **summable** quantity (BA ruling —
 bare average).
 
 ```sql
--- int_ad_perf_unioned.sql
-select 'meta'   as platform_name, * from {{ ref('stg_meta_perf') }}
+-- int_ad_perf_unioned (Silver, PySpark notebook conform+union step)
+select 'meta'   as platform_name, * from stg_meta_perf
 union all
-select 'tiktok' as platform_name, * from {{ ref('stg_tiktok_perf') }}
+select 'tiktok' as platform_name, * from stg_tiktok_perf
 ```
 Silver dedup key: `(ad_id, platform_name, perf_date)` — last-write-wins on `load_ts`
 (platforms restate; keep the latest pull of a given day).
@@ -76,7 +82,9 @@ Silver dedup key: `(ad_id, platform_name, perf_date)` — last-write-wins on `lo
 Grain: **1 edited-ad × 1 platform × 1 DAY**. Raw counts only — **no ratios**.
 
 ```sql
--- fact_ad_performance.sql  (materialized: table)
+-- warehouse/performance/fact_ad_performance.sql  (Fabric Warehouse, T-SQL VIEW, F2)
+-- int_ad_perf_unioned / dim_platform / map_ad_asset are Silver Delta tables (PySpark notebook
+-- conform+union step), reached here via a OneLake shortcut — no dbt ref()
 select
     u.ad_id,
     p.platform_id,
@@ -87,17 +95,18 @@ select
     u.sum_watch_time_sec, u.play_count,
     u.link_clicks, u.results, u.spend,
     current_timestamp as load_ts
-from {{ ref('int_ad_perf_unioned') }} u
-join {{ ref('dim_platform') }} p on p.platform_name = u.platform_name
-join {{ ref('map_ad_asset') }} m  on m.ad_id = u.ad_id   -- manual ad_id→asset_id seed (§2.1)
+from int_ad_perf_unioned u
+join dim_platform p on p.platform_name = u.platform_name
+join map_ad_asset m  on m.ad_id = u.ad_id   -- manual ad_id→asset_id seed (§2.1)
 ```
 
 ### 2.1 `ad_id → asset_id` mapping (manual seed, v1.5)
 At 3–15 ads, this is a hand-maintained seed `seeds/map_ad_asset.csv`
-(`ad_id, asset_id`). Enforced, not assumed:
-- dbt `relationships`: `fact_ad_performance.asset_id` → `dim_asset.asset_id`
-- dbt `accepted_values` (custom): the joined `dim_asset.asset_type` must be `'EDITED'`
-- dbt `not_null` on the mapped `asset_id` (an unmapped ad fails the build — no silent orphan).
+(`ad_id, asset_id`). Enforced, not assumed — by Great Expectations on the Silver Delta table
+(no dbt; dbt is dropped, ADR-008):
+- referential check: `fact_ad_performance.asset_id` → `dim_asset.asset_id`
+- accepted-values gate: the joined `dim_asset.asset_type` must be `'EDITED'`
+- not-null gate on the mapped `asset_id` (an unmapped ad fails the build — no silent orphan).
 
 ---
 
@@ -107,14 +116,14 @@ The **only** place ratios live. Aggregate daily counts to ad-lifetime first (SUM
 **then** divide — `ratio-of-sums`, never `avg-of-ratios`.
 
 ```sql
--- fct_ad_kpi.sql  (materialized: view)
+-- warehouse/performance/fct_ad_kpi.sql  (Fabric Warehouse, T-SQL VIEW, F2)
 with agg as (
     select ad_id, platform_id,
            sum(impressions) impressions, sum(plays_3s) plays_3s,
            sum(plays_25) plays_25, sum(plays_50) plays_50,
            sum(sum_watch_time_sec) watch_sec, sum(play_count) play_count,
            sum(link_clicks) link_clicks, sum(results) results, sum(spend) spend
-    from {{ ref('fact_ad_performance') }}
+    from fact_ad_performance
     group by 1,2
 )
 select
@@ -150,14 +159,14 @@ Maps each funnel metric of each ad to the **one chunk** that owns it. Two mappin
 with anchors as (   -- one row per ad × platform × metric, with the anchor second
     select f.ad_id, f.platform_id, 'hook_rate' as metric_name,
            pl.hook_window_sec as anchor_sec
-    from (select distinct ad_id, platform_id from {{ ref('fact_ad_performance') }}) f
-    join {{ ref('dim_platform') }} pl using (platform_id)
+    from (select distinct ad_id, platform_id from fact_ad_performance) f
+    join dim_platform pl using (platform_id)
     union all
     select f.ad_id, f.platform_id, m.metric_name,
            m.pct * a.duration_sec as anchor_sec
-    from (select distinct ad_id, platform_id from {{ ref('fact_ad_performance') }}) f
-    join {{ ref('map_ad_asset') }} ma using (ad_id)
-    join {{ ref('dim_asset') }} a on a.asset_id = ma.asset_id
+    from (select distinct ad_id, platform_id from fact_ad_performance) f
+    join map_ad_asset ma using (ad_id)
+    join dim_asset a on a.asset_id = ma.asset_id
     cross join (values ('hold_rate_25',0.25),('hold_rate_50',0.50),
                        ('retention_75',0.75),('retention_100',1.00)) m(metric_name,pct)
 ),
@@ -175,14 +184,14 @@ time_aligned as (   -- range join: chunk covering the anchor, with overlap tie-b
                b.position_in_ad asc
            ) as pick
     from anchors an
-    join {{ ref('bridge_ad_chunk') }} b using (ad_id)   -- chunks of THIS edited ad
+    join bridge_ad_chunk b using (ad_id)   -- chunks of THIS edited ad
 ),
 role_aligned as (   -- ctr_link → the cta chunk
     select ad_id, platform_id, 'ctr_link' as metric_name, chunk_id, chunk_role,
            'HIGH' as coverage_confidence,
            row_number() over (partition by ad_id, platform_id
                               order by position_in_ad) as pick
-    from {{ ref('bridge_ad_chunk') }}
+    from bridge_ad_chunk
     where chunk_role = 'cta'
 )
 select ad_id, platform_id, metric_name, chunk_id, chunk_role, coverage_confidence
@@ -217,9 +226,9 @@ select
     end                                   as metric_value,
     al.chunk_id, al.chunk_role, al.coverage_confidence,
     fc.chunk_theme, fc.sentiment, fc.standalone_score
-from {{ ref('int_metric_chunk_alignment') }} al
-join {{ ref('fct_ad_kpi') }}  k  using (ad_id, platform_id)
-join {{ ref('fact_chunk') }}  fc on fc.chunk_id = al.chunk_id      -- EDITED-ad chunk rows
+from int_metric_chunk_alignment al
+join fct_ad_kpi  k  using (ad_id, platform_id)
+join fact_chunk  fc on fc.chunk_id = al.chunk_id      -- EDITED-ad chunk rows
 where al.coverage_confidence in ('HIGH','MEDIUM')                  -- LOW excluded (G-coverage)
 ```
 
@@ -236,7 +245,7 @@ with base as (
     select platform_id, metric_name,
            'chunk_theme' as feature_dim, chunk_theme as feature_value,
            ad_id, metric_value
-    from {{ ref('fct_ad_metric_chunk') }}
+    from fct_ad_metric_chunk
     where metric_value is not null
 ),
 grouped as (
@@ -275,7 +284,7 @@ feature groups, apply Bonferroni across the tests in that family, write back `p_
 
 ## 7. Quality gates (release blockers — @data-quality-steward owns)
 
-dbt schema tests + GE expectations on the new objects:
+GE expectations on the new objects (no dbt schema tests — dbt is dropped, ADR-008):
 
 | Gate | Object | Rule | Severity |
 |------|--------|------|----------|
@@ -343,7 +352,7 @@ order by fc.standalone_score desc;
 ## 9. Build order (suggested)
 
 1. `dim_platform` seed + `map_ad_asset` seed.
-2. `bronze_ad_performance_raw` ingest (manual CSV → S3) + `stg_*` + `int_ad_perf_unioned`.
+2. `bronze_ad_performance_raw` ingest (manual CSV → OneLake) + `stg_*` + `int_ad_perf_unioned`.
 3. `fact_ad_performance` + its CRITICAL gates (esp. edited-only FK, every-ad→chunk).
 4. `bridge_ad_chunk` populate (requires edited ads already chunked through the v1 pipeline).
 5. `fct_ad_kpi`.

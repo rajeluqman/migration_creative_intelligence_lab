@@ -54,7 +54,7 @@ actually ran** — never propagated backward onto RAW via `parent_asset_id`.
 | Causal "chunk caused conversion" claims | Requires a controlled swap-one-chunk creative experiment. |
 | Predictive ML scoring / variant factory / RAG / vector DB | Gated on the correlation mart proving signal first; winners-only n<12 cannot train an honest predictor. |
 | Cross-platform pooled magnitudes | Different measurement semantics (`dim_platform`). |
-| Connectorized ingest (Fivetran/Airbyte/Meta-API) | Over-engineering at 3–15 ads; manual CSV→S3 until ~50+ ads/week + DA TCO sign-off. |
+| Connectorized ingest (Fivetran/Airbyte/Meta-API) | Over-engineering at 3–15 ads; manual CSV→OneLake (ADR-008; was S3) until ~50+ ads/week + DA TCO sign-off. |
 
 ## Consequences
 

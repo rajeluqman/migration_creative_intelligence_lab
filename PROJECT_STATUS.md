@@ -74,11 +74,36 @@ milestone, not a working pipeline.
   (verdict written directly into the ADR's "Sign-off" section; ADR-008 Status line updated to
   "Accepted, fully closed"). v1 Scope LOCKED list and all v2-OUT items confirmed unchanged.
 
+## Gap-recheck pass — 2026-06-24 (post-push)
+F0 push landed, then a full-repo grep audit (`dbt|duckdb|s3|snowflake|airflow|minio`) found 14
+architecture docs the first F0 pass had missed (it covered CLAUDE.md/STACK_AND_FLOW/contracts/
+agents/cheatsheets/curriculum but not the deeper SPEC/DATA_MODEL/DQD/DRD/STTM/BRD/ADR-002/erd.dbml
+layer). Fixed, same surgical-edit-not-restructure rule:
+- `DATA_MODEL.md` §5/§8 (dbt materialization path + stack table) + 4 stray cell-level S3/dbt notes.
+- `SPEC_v1_search.md` — Engine line, all `{{ ref() }}`→plain names, `ilike`→`like`, the DuckDB
+  `fts` section replaced, and a **substantive ruling change**: vector/semantic search is now OUT
+  full stop (no in-stack vector index at all — ADR-008 Binding Condition 4), not a "v1.5
+  fast-follow" the way DuckDB VSS made it in the sibling repo.
+- `SPEC_v1.5_performance_marts.md` — Engine line, all 12 `{{ ref() }}`→plain names, dbt
+  test/relationship mentions → GE-equivalent, manual-CSV target S3→OneLake.
+- `DATA_MODEL_v1.5_PERFORMANCE.md`, `DATA_DICTIONARY.md`, `DRD.md`, `STTM.md`, `BRD.md`,
+  `ADR-002/004/006` (passing implementation-detail mentions only — their core rulings untouched),
+  `BOUNDARY_CONTRACT.md`, `erd.dbml` (`database_type`, 3 column notes) — same dbt/DuckDB/S3
+  pattern fixed throughout.
+- `DQD.md` §4 reconciliation gate **rewritten substantively**: the old test compared Snowflake
+  external tables vs DuckDB-over-S3; the Fabric equivalent compares a Warehouse view vs a direct
+  Lakehouse Delta read (Direct Lake mode has no import/duplication to begin with).
+- `DQD.md`/`DRD.md` also had **dangling citations** to `PROJECT_STATUS.md` finding #1/#2/#3 —
+  those findings live in the *sibling* repo's checkpoint, not this one. Reframed as "same open
+  item as `creative_intelligence_lab/PROJECT_STATUS.md` finding #N" and, for finding #1 (a dbt
+  schema test marked DONE there), reframed as **REQUIRED AT F2** here since no dbt/`_performance.yml`
+  exists in this repo to have inherited that test from.
+- Both contracts re-verified green after every batch of fixes, not just once at the end.
+
 ## Next step when resuming
-1. Commit + push F0 to `https://github.com/rajeluqman/migration_creative_intelligence_lab`
-   (owner explicitly wants this pushed BEFORE provisioning any codespace/workspace on the new
-   repo — do not create one).
-2. Only after push: owner creates the Fabric workspace + codespace themselves, then F1 begins
+1. Commit + push this gap-fix patch to
+   `https://github.com/rajeluqman/migration_creative_intelligence_lab`.
+2. Owner creates the Fabric workspace + codespace themselves, then F1 begins
    (notebooks/scripts/setup.sh/requirements.txt/.env.example).
 
 ## Standalone status

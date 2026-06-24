@@ -39,7 +39,7 @@ Doctrine axis 2, client semantics get their own dimension; they are **not** over
 
 | column | type | notes |
 |--------|------|-------|
-| `client_id` (PK) | VARCHAR | short stable slug, e.g. `voltecx` — used as the S3 partition token |
+| `client_id` (PK) | VARCHAR | short stable slug, e.g. `voltecx` — used as the OneLake partition token (ADR-008; was S3 in the original build) |
 | `client_name` | VARCHAR | display name |
 | `account_support_owner` | VARCHAR | internal owner of the relationship |
 | `drive_folder_id` | VARCHAR | the client's source Google Drive folder |

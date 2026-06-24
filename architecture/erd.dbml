@@ -6,14 +6,14 @@
 // ============================================================================
 
 Project creative_intelligence {
-  database_type: 'DuckDB'
+  database_type: 'MSSQL'  // Fabric Warehouse, T-SQL (ADR-008) — was 'DuckDB' in the original build
   Note: 'Graph + feature store. Two grains: semantic chunk, and ad x platform x day.'
 }
 
 // ───────────────────────────── v1: GRAPH + FEATURE STORE ────────────────────
 
 Table dim_client {
-  client_id            varchar [pk, note: 'short stable slug, e.g. voltecx — S3 partition token (ADR-006)']
+  client_id            varchar [pk, note: 'short stable slug, e.g. voltecx — OneLake partition token (ADR-006, ADR-008)']
   client_name          varchar
   account_support_owner varchar
   drive_folder_id      varchar [note: 'client source Google Drive folder']
@@ -30,10 +30,10 @@ Table dim_asset {
   asset_name      varchar
   asset_type      varchar [note: 'RAW | EDITED']
   duration_sec    integer
-  source_uri      varchar [note: 'pointer to landing/<client_id>/video/<asset_id>.<ext>']
+  source_uri      varchar [note: 'pointer to Files/landing/<client_id>/video/<asset_id>.<ext> (OneLake, ADR-008)']
   dq_flag         varchar [note: 'e.g. likely_near_dup (no auto-merge)']
-  ingested_at     timestamp [note: 'provenance — when bytes landed in S3, immutable (write-once)']
-  load_ts         timestamp [note: 'audit — when this row was last rebuilt by dbt, volatile']
+  ingested_at     timestamp [note: 'provenance — when bytes landed in OneLake, immutable (write-once)']
+  load_ts         timestamp [note: 'audit — when this row was last rebuilt (Gold Warehouse view refresh, no dbt — ADR-008), volatile']
   Note: 'One node per video asset (raw or edited).'
 }
 
@@ -47,7 +47,7 @@ Table fact_chunk {
   chunk_theme         varchar [note: 'Hook | Problem | Solution | Social Proof | CTA ...']
   sentiment           varchar [note: 'enum-bounded']
   standalone_score    integer [note: '1..5, GE range-gated']
-  embedding           float[] [note: 'v1.5 — DuckDB VSS semantic search']
+  embedding           float[] [note: 'reserved/nullable — no in-stack vector index, semantic search is OUT (ADR-008 Binding Condition 4, SPEC_v1_search.md §1)']
   Note: 'GRAIN = one semantic chunk (the unit of creative value). Chunking happens in Silver.'
 }
 

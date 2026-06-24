@@ -147,17 +147,19 @@ from correlation aggregates** by default.
   | **n ≥ 12 AND ≥5/group** | **SUGGESTIVE** | Mann-Whitney U (non-parametric) + Bonferroni |
 
 - **G4 — Double-count guard:** `bridge_ad_chunk` is 1 ad → N chunks; aggregate at
-  theme/sentiment/role grain; dbt test asserts no ad's impressions are multiplied by chunk count.
-- **GE / dbt gates:** rates ∈[0,1]; counts & spend ≥0; `platform` & `chunk_role` accepted-values;
-  every `ad_id` resolves to ≥1 chunk via bridge (relationships); `asset_id` FK is
+  theme/sentiment/role grain; a GE expectation asserts no ad's impressions are multiplied by
+  chunk count (no dbt test — dbt is dropped, ADR-008).
+- **GE gates:** rates ∈[0,1]; counts & spend ≥0; `platform` & `chunk_role` accepted-values;
+  every `ad_id` resolves to ≥1 chunk via bridge (referential check); `asset_id` FK is
   `asset_type='EDITED'`; `sample_size` present and gating.
 
 ## 7. Ingest & sequencing
 
 - **v1 search demo ships FIRST, untouched.** v1.5 is purely additive (zero existing-object changes).
-- **Ingest = manual CSV → S3** at 3–15 ads. `ad_id → asset_id` mapping is manual/filename-based,
-  enforced via a dbt `relationships` test. Connector (Fivetran/Airbyte/Meta-API) revisited only
-  past **~50+ ads/week with @data-architect TCO sign-off**.
+- **Ingest = manual CSV → OneLake** at 3–15 ads. `ad_id → asset_id` mapping is
+  manual/filename-based, enforced via a GE referential check (no dbt — dbt is dropped,
+  ADR-008). Connector (Fivetran/Airbyte/Meta-API) revisited only past **~50+ ads/week with
+  @data-architect TCO sign-off**.
 
 ## 8. v1.5 scope line & what stays vetoed
 

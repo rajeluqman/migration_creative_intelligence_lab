@@ -17,8 +17,10 @@ The owner's instinct (and the other four portfolio pipelines) leaned toward a Ki
 
 Model Gold as an **asset-lineage graph + chunk feature store**: `dim_asset` (node, self-referencing
 `parent_asset_id`), `fact_chunk` (feature row, grain = one semantic chunk), and explicit edge/bridge
-tables (`bridge_asset_lineage`, `bridge_chunk_compatibility`). A vector index (DuckDB VSS) sits
-**beside** the relational model, never inside a column. Do **not** force a Kimball star.
+tables (`bridge_asset_lineage`, `bridge_chunk_compatibility`). A vector index, if one is ever
+added, would sit **beside** the relational model, never inside a column — this repo's locked
+stack has no vector index at all (ADR-008 Binding Condition 4; `SPEC_v1_search.md` §1). Do
+**not** force a Kimball star.
 
 ## Rationale
 
@@ -41,12 +43,13 @@ tables (`bridge_asset_lineage`, `bridge_chunk_compatibility`). A vector index (D
 |-------------|--------------|
 | **Kimball star (fact_chunk + 4 conformed dims)** | No additive fact; graph traversal fights the star; the 4th dim would be cosmetic. |
 | **Flat Gold table (one wide row per chunk)** | Discards `bridge_chunk_compatibility` — the entire anti-Frankenstein mechanism and the north-star query. (See ADR — flat fallback rejected, round-1.) |
-| **Pure graph DB (Neo4j etc.)** | New infra outside the locked stack; relational + bridge tables in DuckDB express the graph adequately at this scale. |
+| **Pure graph DB (Neo4j etc.)** | New infra outside the locked stack; relational + bridge tables (Fabric Warehouse T-SQL views, ADR-008 — was DuckDB in the original build) express the graph adequately at this scale. |
 
 ## Consequences
 
-- **Positive:** the model matches the domain; mix-and-match and lineage are first-class; dbt + DuckDB
-  express it natively; the v1.5 performance layer attaches cleanly via `bridge_ad_chunk`.
+- **Positive:** the model matches the domain; mix-and-match and lineage are first-class; the
+  Fabric Warehouse T-SQL views express it natively (ADR-008 — was dbt + DuckDB in the original
+  build); the v1.5 performance layer attaches cleanly via `bridge_ad_chunk`.
 - **Negative / accepted:** "graph + feature store" needs a one-line explanation to stakeholders used
   to stars — handled by `ERD_consolidated.md`.
 - **@analytics-engineer dissent:** instinct toward a star was overruled; its dbt-layering and

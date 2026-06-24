@@ -26,10 +26,11 @@ and a @data-architect TCO sign-off (`architecture/ADR-004-performance-veto-conve
 ## 2. Ingestion Frequency
 
 **Path A (video):** ad-hoc, client-delivered — the client drops a new Drive folder when
-they have footage; there is no fixed daily/hourly cadence to land. `scripts/ingest_drive_to_s3.py`
-pulls per drop; Airflow orchestrates per-asset processing once landed (deferrable operators,
-`gemini_api` Pool, `expand()` per `asset_id` — `architecture/STACK_AND_FLOW.md` §1, §"Orchestration").
-There is no committed SLA on how fast a drop must land (see `architecture/BRD.md` §7).
+they have footage; there is no fixed daily/hourly cadence to land. The Drive→OneLake ingest
+script pulls per drop; a Fabric Data Factory pipeline orchestrates per-asset processing once
+landed (retry/backoff activities, rate-limit-aware looping, a `ForEach` activity per `asset_id`
+— `architecture/STACK_AND_FLOW.md` §1, §"Orchestration", ADR-008). There is no committed SLA on
+how fast a drop must land (see `architecture/BRD.md` §7).
 
 **Path B (performance):** ad-hoc, at 3–15 winning ads per batch — not streaming, not a
 scheduled pull (`architecture/DATA_MODEL_v1.5_PERFORMANCE.md` §7).
@@ -77,15 +78,17 @@ derived downstream in `fct_ad_kpi` (view).
 
 3. **Schema-valid-but-empty response.** A Gemini response can pass JSON-schema validation
    while containing zero chunks (`{"chunks": []}`) — none of the four existing gates catch
-   this. **Status: OPEN, not yet implemented** — tracked as the "5th LLM-output gate"
-   (`PROJECT_STATUS.md` finding #2, `great_expectations/README.md` line 3). This DRD
-   records it as a known issue; it does not resolve it here.
+   this. **Status: OPEN, not yet implemented** — tracked as the "5th LLM-output gate" (same
+   open item as `creative_intelligence_lab/PROJECT_STATUS.md` finding #2,
+   `great_expectations/README.md` line 3 — pipeline logic, not stack-specific, carries over
+   unresolved). This DRD records it as a known issue; it does not resolve it here.
 
 4. **`ad_id` → `asset_id` join is manual.** Path B's join key is a hand-maintained mapping
-   (`map_ad_asset.csv`), enforced by a dbt `relationships` test, not a guaranteed key
-   (`architecture/STACK_AND_FLOW.md` §3). Manual-mapping errors are a plausible failure
-   mode at this volume — row-count reconciliation EDL→`bridge_ad_chunk` is also still
-   **OPEN** (`PROJECT_STATUS.md` finding #3).
+   (`map_ad_asset.csv`), enforced by a GE referential check, not a guaranteed key (no dbt —
+   dbt is dropped, ADR-008; `architecture/STACK_AND_FLOW.md` §3). Manual-mapping errors are a
+   plausible failure mode at this volume — row-count reconciliation EDL→`bridge_ad_chunk` is
+   also still **OPEN** (same open item as `creative_intelligence_lab/PROJECT_STATUS.md`
+   finding #3).
 
 ## 6. Sign-off Gate
 

@@ -48,25 +48,32 @@ that claims completeness it doesn't have is worse than no DQD.
 1. **5th LLM-output gate (non-triviality / completeness-floor) — OPEN.** All four gates in
    §1 pass a schema-valid-but-empty `{"chunks": []}` Gemini response. Needed: a GE
    expectation `chunks length >= 1` at the Bronze→Silver boundary, quarantining empties.
-   Owner: @data-quality-steward. (`PROJECT_STATUS.md` finding #2 — the `bronze_asset_raw`
-   suite line above already lists this check; it is not yet *built*, only specified.)
+   Owner: @data-quality-steward. (Originally surfaced during the sibling repo's first real
+   Drive run — see `creative_intelligence_lab/PROJECT_STATUS.md` finding #2 — the
+   `bronze_asset_raw` suite line above already lists this check; not yet *built* in either repo.)
 2. **Row-count reconciliation, EDL → `bridge_ad_chunk` — OPEN.** An inner join can silently
-   drop EDL rows whose `chunk_id` is absent from `fact_chunk`. HIGH severity.
-   (`PROJECT_STATUS.md` finding #3)
-3. **`bridge_ad_chunk` grain guard — DONE.** `unique_combination_of_columns
-   [ad_id, chunk_id, position_in_ad]` + not-nulls + position-range test, added in
-   `_performance.yml`. (`PROJECT_STATUS.md` finding #1 — included here for completeness,
-   not as an open item.)
+   drop EDL rows whose `chunk_id` is absent from `fact_chunk`. HIGH severity. (Same open item
+   as `creative_intelligence_lab/PROJECT_STATUS.md` finding #3 — pipeline logic, not
+   stack-specific, so it carries over unresolved.)
+3. **`bridge_ad_chunk` grain guard — REQUIRED AT F2, not yet built here.** In the sibling repo
+   this was DONE as a dbt schema test (`unique_combination_of_columns [ad_id, chunk_id,
+   position_in_ad]` + not-nulls + position-range, in `_performance.yml` —
+   `creative_intelligence_lab/PROJECT_STATUS.md` finding #1). This repo has no dbt and no
+   `_performance.yml` (ADR-008) — the equivalent GE expectation on the Gold Warehouse view
+   needs authoring when F2 builds it. Not done by inheritance; tracked here so it isn't missed.
 
 ## 4. Reconciliation gate (serving-layer truth boundary)
 
-The Snowflake Cortex serving veneer is read-only over Gold S3
-(`architecture/ADR-005-unified-s3-and-snowflake-serving.md`). This is enforced by a
-**reconciliation test**: Snowflake external-table row counts + key sets must exact-match
-the DuckDB-over-S3 read of the same Gold parquet. This is not a nicety — it is the
-mechanism that keeps "Gold S3 = sole source of truth" true in practice, not just on paper.
-@data-architect's veto re-fires if Snowflake ever diverges (a Snowflake-only fact, a
-CTAS-internal copy, a KPI persisted only in Snowflake).
+**Fabric build (ADR-008, supersedes ADR-005):** Power BI Direct Lake reads the Gold Warehouse
+T-SQL `VIEW`s, which in turn read the Silver Delta tables via a OneLake shortcut — no import,
+no duplication, by construction (Direct Lake mode has no separate copy to drift). The
+reconciliation risk that remains is at the **view** layer, not the BI layer: this is enforced
+by a **reconciliation test** — a Warehouse view's row counts + key sets must exact-match a
+direct read of the same Lakehouse Delta table it shortcuts to. This is not a nicety — it is the
+mechanism that keeps "the OneLake Delta tables = sole source of truth" true in practice, not
+just on paper. @data-architect's veto re-fires if the serving layer ever diverges (a
+Power-BI-only measure backed by nothing in the Warehouse, a Copilot-cached copy, a KPI
+persisted only in a Power BI dataset instead of a Gold view).
 
 ## 5. Honesty gates (v1.5 — distinct from data-quality gates above)
 

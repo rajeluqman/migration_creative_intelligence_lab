@@ -78,7 +78,7 @@ optionality*, consciously given up everywhere except the permanently-exempt **go
 ### `dim_client` (tenancy dimension — ADR-006)
 | column | type | notes |
 |--------|------|-------|
-| `client_id` (PK) | VARCHAR | short stable slug; also the S3 partition token |
+| `client_id` (PK) | VARCHAR | short stable slug; also the OneLake partition token |
 | `client_name` | VARCHAR | display name |
 | `account_support_owner` | VARCHAR | internal relationship owner |
 | `drive_folder_id` | VARCHAR | the client's source Google Drive folder |
@@ -99,10 +99,10 @@ hand-curated via seed). One domain = one dimension — client attributes never o
 | `asset_name` | VARCHAR | original filename |
 | `asset_type` | VARCHAR | `RAW` \| `EDITED` |
 | `duration_sec` | INT | |
-| `source_uri` | VARCHAR | pointer to `landing/<client_id>/video/...` |
+| `source_uri` | VARCHAR | pointer to `Files/landing/<client_id>/video/...` (OneLake, ADR-008) |
 | `dq_flag` | VARCHAR | e.g. `likely_near_dup` (MEDIUM signal, no auto-merge) — derived from `content_sha256` collisions **within a client** |
-| `ingested_at` | TIMESTAMP | **provenance** — when the bytes landed in S3 from Drive; immutable, write-once at landing, never recomputed on re-parse (ADR-006 impl, @data-architect 2026-06-22) |
-| `load_ts` | TIMESTAMP | **audit** — when this dimension row was last (re)built by dbt; volatile, distinct from `ingested_at` |
+| `ingested_at` | TIMESTAMP | **provenance** — when the bytes landed in OneLake from Drive; immutable, write-once at landing, never recomputed on re-parse (ADR-006 impl, @data-architect 2026-06-22) |
+| `load_ts` | TIMESTAMP | **audit** — when this dimension row was last (re)built (the Gold Warehouse view's refresh; no dbt — dbt is dropped, ADR-008); volatile, distinct from `ingested_at` |
 
 > **Identity (ADR-006):** `asset_id = SHA-256(client_id || ':' || content_sha256)`. Still
 > deterministic and content-addressed (same client + same bytes → same id), so the Bronze
@@ -147,24 +147,25 @@ survive into Gold).
 > round-1 veto, see §6). Grain: 1 edited ad × 1 platform × 1 day; attaches to the EDITED
 > asset that actually ran. Full schema: `DATA_MODEL_v1.5_PERFORMANCE.md` + `ERD_consolidated.md`.
 
-## 5. dbt materialization path
+## 5. Notebook → Warehouse materialization path (ADR-008, Fabric build)
 
 ```
-seeds: dim_client (tenancy reference, SCD0)
-sources: bronze_asset_raw (raw Gemini JSON)
-  → stg_gemini_raw        -- flatten JSON; grain = asset_id + chunk_sequence
-  → int_chunk_cleaned     -- filler removal, timestamp normalize, score passthrough
-  → marts (Gold):
-        dim_client                       (from seed)
+seeds: dim_client (tenancy reference, SCD0; loaded as a Lakehouse Delta table)
+Bronze: Files/bronze/asset_raw (raw Gemini JSON, Lakehouse Files/)
+  → Silver notebook (PySpark): flatten JSON; grain = asset_id + chunk_sequence
+  → Silver notebook (PySpark): filler removal, timestamp normalize, score passthrough
+  → Gold (Fabric Warehouse T-SQL VIEWs over a OneLake shortcut):
+        dim_client                       (from seed Delta table)
         dim_asset                        (client_id FK → dim_client)
-        fact_chunk                       (+ dbt_expectations range gate 1..5)
+        fact_chunk                       (+ GE range gate 1..5)
         bridge_chunk_compatibility       (explode next_compatible_themes[])
         bridge_asset_lineage
         dim_keyword_bridge / dim_theme_bridge
 ```
 Tests: `unique`+`not_null` on `chunk_id`; `unique` on (`asset_id`,`chunk_sequence`);
-`relationships` FK integrity (`fact_chunk.asset_id`→`dim_asset`, `dim_asset.client_id`→`dim_client`);
-`dbt_expectations` range on `standalone_score`.
+FK integrity (`fact_chunk.asset_id`→`dim_asset`, `dim_asset.client_id`→`dim_client`) and
+range gate on `standalone_score` — enforced by Great Expectations on the Silver Delta table
+(no dbt; dbt is dropped, ADR-008) plus the lineage/boundary contracts.
 
 ## 6. Vetoes embedded in the model
 
@@ -202,24 +203,25 @@ semantically wrong. Four gates, cheapest-first:
 
 Promotion rule: **Silver constraint-pass ≥95% before Gold build.**
 
-## 8. Stack (locked at this scale)
+## 8. Stack (Microsoft Fabric build, ADR-008 — supersedes the original DuckDB/S3/Snowflake stack)
 
 | Concern | Choice | Why |
 |---------|--------|-----|
-| Landing transport | Python (Drive API → S3) | content-hash naming, write-once, client-partitioned |
-| Transcription/extraction | **Gemini API (Flash-first)** | per-second video billing; Flash 10–15× cheaper than Pro |
-| Storage | **S3** (video bytes) + S3 (Bronze/Silver/Gold parquet) | pay-per-GB, zero idle |
-| Compute / transforms | **DuckDB + dbt-duckdb** | KB–MB structured scale; bottleneck is the API call, not CPU |
-| Orchestration | **local Airflow** — deferrable operators + triggerer, `gemini_api` Pool sized to QPM, backoff+jitter on 429, dynamic task mapping `expand()` per `asset_id`, skip-existing short-circuit on hash, **+ scheduled landing-TTL guarded-delete task (ADR-007)** | async/rate-limit-bound; synchronous PythonOperator polling would pin worker slots |
-| Quality | **Great Expectations** + dbt tests | per-layer gates above |
-| Demo serving | **Snowflake Cortex** veneer over Gold S3 (Cortex Search + Power BI); **DuckDB VSS = $0 fallback** | satisfies north-star (ADR-005) |
+| Landing transport | Python (Drive API → OneLake) | content-hash naming, write-once, client-partitioned |
+| Transcription/extraction | **Gemini API (Flash-first)** | per-second video billing; Flash 10–15× cheaper than Pro (unchanged) |
+| Storage | **OneLake** — Lakehouse `Files/` (video bytes, Bronze) + Delta Tables (Silver) | one logical copy, no S3/MinIO; Gold is a view, never a 2nd physical copy |
+| Compute / transforms | **PySpark notebooks** (Fabric Lakehouse, Bronze→Silver) + **Fabric Warehouse T-SQL `VIEW`s** (Gold) | dbt dropped (ADR-008); KB–MB structured scale, bottleneck is still the API call, not CPU |
+| Orchestration | **Fabric Data Factory pipeline** — per-asset activities, retry/backoff on 429, `ForEach` activity per `asset_id`, skip-existing short-circuit on hash, + scheduled landing-TTL guarded-delete activity (ADR-007, amended) | async/rate-limit-bound; a synchronous polling loop would stall the pipeline |
+| Quality | **Great Expectations** (run in notebooks) + lineage/boundary contracts | per-layer gates above; no dbt tests (dbt dropped) |
+| Demo serving | **Power BI Direct Lake** (reads Delta directly) + **Fabric Copilot / Azure OpenAI** QA/summarization veneer | satisfies north-star (ADR-008; supersedes ADR-005's Snowflake Cortex) |
 
-**REJECTED at this scale:** Spark / Databricks / MWAA — over-engineering and idle-cost
-anti-pattern for <10K videos. *(Revisit only if @data-architect justifies long-term TCO at
-materially higher volume.)*
-**ADMITTED by ADR-005 (owner override 2026-06-22):** Snowflake Cortex as a **read-only serving
-veneer** over Gold S3 (disposable trial + day-25 teardown; Gold S3 stays sole source of truth).
-Storage is now unified S3 (no MinIO).
+**REJECTED at this scale:** Databricks / Glue (standalone cluster) / dedicated vector DB —
+over-engineering and idle-cost anti-pattern for <10K videos. *(Revisit only if @data-architect
+justifies long-term TCO at materially higher volume.)* **Spark itself is no longer rejected**
+— Fabric's managed PySpark notebooks are now the Bronze/Silver compute engine (ADR-008).
+**ADMITTED by ADR-008 (owner override 2026-06-24, supersedes ADR-005):** Power BI Direct Lake +
+Fabric Copilot/Azure OpenAI as a **read-only serving veneer** over Gold Warehouse views; the
+OneLake Delta tables stay sole source of truth. Storage is now unified OneLake (no S3, no MinIO).
 
 ## 9. Cost firewall
 
@@ -235,7 +237,7 @@ Storage is now unified S3 (no MinIO).
 
 ## 10. v1 scope line (agreed)
 
-**IN:** Drive → S3 landing (client-partitioned) → Bronze (tenant-scoped-content-deduped raw
+**IN:** Drive → OneLake landing (client-partitioned) → Bronze (tenant-scoped-content-deduped raw
 Gemini JSON) → Silver (gated semantic chunks) → Gold (`dim_client` + chunk feature store +
 `dim_asset` + lineage & compatibility bridges) → **one SQL/text search demo** returning sane,
 timestamped, standalone-scored clips over 5–10 videos. Multi-client tenancy (`dim_client`,

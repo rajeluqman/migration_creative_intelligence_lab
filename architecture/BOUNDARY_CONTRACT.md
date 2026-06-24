@@ -46,7 +46,7 @@ rather than silently assumed-covered.
 
 ## Why `fact_ad_performance` / `stg_meta_perf.sql` / `stg_tiktok_perf.sql` are NOT violations
 ADR-004 converted (not reversed) the original performance veto: metrics are allowed IF they
-arrive via **manual CSV→S3** landing and attach only to the **edited ad that ran** (never
+arrive via **manual CSV→OneLake** landing and attach only to the **edited ad that ran** (never
 propagated backward onto RAW). ST5 bans the *live API connector path* that ADR-004 explicitly
 still rejects — it does not ban the performance marts themselves.
 
