@@ -1,0 +1,16 @@
+{
+  "expectation_suite_name": "fact_ad_performance",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "gold-performance",
+    "note": "Raw counts only; EDITED-only FK; every ad resolves to >=1 chunk via bridge (SPEC §7, ADR-004)."
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "ad_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_in_set", "kwargs": {"column": "platform_id", "value_set": ["meta", "tiktok"]}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "impressions", "min_value": 0}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "spend", "min_value": 0}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "plays_3s", "min_value": 0}, "meta": {"severity": "CRITICAL"}}
+  ]
+}

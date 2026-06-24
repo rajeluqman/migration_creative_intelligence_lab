@@ -1,0 +1,138 @@
+// ============================================================================
+// Creative Intelligence Pipeline — ERD (v1 + v1.5)
+// Paste into https://dbdiagram.io/d  for a rendered ERD.
+// Paradigm: asset-lineage GRAPH + chunk FEATURE STORE + within-winners
+//           performance-correlation layer. NOT a Kimball star.
+// ============================================================================
+
+Project creative_intelligence {
+  database_type: 'DuckDB'
+  Note: 'Graph + feature store. Two grains: semantic chunk, and ad x platform x day.'
+}
+
+// ───────────────────────────── v1: GRAPH + FEATURE STORE ────────────────────
+
+Table dim_client {
+  client_id            varchar [pk, note: 'short stable slug, e.g. voltecx — S3 partition token (ADR-006)']
+  client_name          varchar
+  account_support_owner varchar
+  drive_folder_id      varchar [note: 'client source Google Drive folder']
+  landing_ttl_days     integer [note: 'per-client landing retention — feeds ADR-007 guarded delete']
+  status               varchar [note: 'active | paused | offboarded']
+  Note: 'One row per client account. SCD0 reference (seed-sourced), ADR-006.'
+}
+
+Table dim_asset {
+  asset_id        varchar [pk, note: 'SHA-256(client_id ":" content_sha256) — tenant-scoped (ADR-006)']
+  client_id       varchar [ref: > dim_client.client_id, note: 'tenancy boundary, NOT NULL (ADR-006)']
+  content_sha256  varchar [note: 'raw video-byte hash; non-key, intra-client near-dup signal']
+  parent_asset_id varchar [ref: > dim_asset.asset_id, note: 'RAW->EDITED, DISCOVERY ONLY (no metrics)']
+  asset_name      varchar
+  asset_type      varchar [note: 'RAW | EDITED']
+  duration_sec    integer
+  source_uri      varchar [note: 'pointer to landing/<client_id>/video/<asset_id>.<ext>']
+  dq_flag         varchar [note: 'e.g. likely_near_dup (no auto-merge)']
+  ingested_at     timestamp [note: 'provenance — when bytes landed in S3, immutable (write-once)']
+  load_ts         timestamp [note: 'audit — when this row was last rebuilt by dbt, volatile']
+  Note: 'One node per video asset (raw or edited).'
+}
+
+Table fact_chunk {
+  chunk_id            varchar [pk]
+  asset_id            varchar [ref: > dim_asset.asset_id]
+  chunk_sequence      integer
+  start_sec           double  [note: 'offset from asset start']
+  end_sec             double
+  transcript_segment  text
+  chunk_theme         varchar [note: 'Hook | Problem | Solution | Social Proof | CTA ...']
+  sentiment           varchar [note: 'enum-bounded']
+  standalone_score    integer [note: '1..5, GE range-gated']
+  embedding           float[] [note: 'v1.5 — DuckDB VSS semantic search']
+  Note: 'GRAIN = one semantic chunk (the unit of creative value). Chunking happens in Silver.'
+}
+
+Table bridge_asset_lineage {
+  parent_asset_id varchar [ref: > dim_asset.asset_id]
+  child_asset_id  varchar [ref: > dim_asset.asset_id]
+  Note: 'RAW -> EDITED edge. Navigation/discovery only. NEVER carries metrics.'
+}
+
+Table bridge_chunk_compatibility {
+  chunk_id          varchar [ref: > fact_chunk.chunk_id]
+  compatible_theme  varchar
+  theme_match_score decimal
+  Note: 'Mix-and-match adjacency (anti-Frankenstein). Explodes next_compatible_themes[].'
+}
+
+Table dim_keyword_bridge {
+  chunk_id varchar [ref: > fact_chunk.chunk_id]
+  keyword  varchar
+  Note: 'Exploded keywords[] — no array columns in Gold.'
+}
+
+Table dim_theme_bridge {
+  chunk_id varchar [ref: > fact_chunk.chunk_id]
+  theme    varchar
+  Note: 'Exploded theme tags.'
+}
+
+Table fact_extraction_run {
+  run_id                varchar [pk]
+  asset_id              varchar [ref: > dim_asset.asset_id]
+  prompt_version        varchar
+  model_version         varchar
+  tokens_in             bigint
+  tokens_out            bigint
+  api_cost              decimal
+  processing_time_sec   decimal
+  retry_count           integer
+  extraction_confidence decimal
+  Note: 'Operational telemetry (enhancement). FinOps + ops dashboard. NOT a business fact.'
+}
+
+// ───────────────────────────── v1.5: PERFORMANCE LAYER ──────────────────────
+
+Table dim_platform {
+  platform_id     varchar [pk]
+  platform_name   varchar [note: 'meta | tiktok']
+  hook_window_sec integer [note: 'Meta=3, TikTok=6 — drives time-range join, never hardcoded']
+  hold_milestones varchar [note: 'retention checkpoint defs']
+  Note: 'Anti-pooling key: metric semantics differ per platform.'
+}
+
+Table fact_ad_performance {
+  ad_id              varchar [pk, note: 'platform creative id (the thing that ran)']
+  platform_id        varchar [pk, ref: > dim_platform.platform_id]
+  perf_date          date    [pk]
+  asset_id           varchar [ref: > dim_asset.asset_id, note: 'must be asset_type=EDITED']
+  impressions        bigint
+  plays_3s           bigint
+  plays_25           bigint
+  plays_50           bigint
+  plays_75           bigint
+  plays_100          bigint
+  sum_watch_time_sec decimal [note: 'derive Average Play Time; never store the ratio']
+  play_count         bigint
+  link_clicks        bigint
+  results            bigint
+  spend              decimal
+  load_ts            timestamp
+  Note: 'GRAIN = 1 edited-ad x 1 platform x 1 DAY. Raw counts only. Ratios live in fct_ad_kpi view.'
+}
+
+Table bridge_ad_chunk {
+  ad_id         varchar [pk, ref: > fact_ad_performance.ad_id]
+  chunk_id      varchar [pk, ref: > fact_chunk.chunk_id, note: 'edited-ad chunk row']
+  asset_id      varchar [ref: > dim_asset.asset_id, note: 'the EDITED asset']
+  chunk_role    varchar [note: 'hook | body | social_proof | cta']
+  position_in_ad integer
+  start_sec     double  [note: 'in EDITED timeline']
+  end_sec       double
+  Note: "Editor's asserted cut composition (a FACT, not inference). The v1.5 unlock."
+}
+
+// ───────────────────────────── DERIVED (views / marts, not base tables) ─────
+// fct_ad_kpi                  : view  — ratios (hook_rate, ctr_link, cvr ...)
+// int_metric_chunk_alignment : view  — metric -> 1 owning chunk (time-range join)
+// fct_ad_metric_chunk         : table — 1 ad x platform x metric -> value + chunk features
+// mart_chunk_perf_correlation : table — within-platform, within-winners, sample-gated insight

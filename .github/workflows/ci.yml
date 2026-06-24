@@ -1,0 +1,73 @@
+name: CI
+
+# Static gates only — $0, no cloud, no Fabric capacity, no secrets. No dbt (dropped per
+# ADR-008) — there is no local engine to "build" against, so CI proves lint/compile/contracts,
+# not a full Fabric run (that needs a real workspace + capacity; see PROJECT_STATUS.md).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  static-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Lint (ruff)
+        run: |
+          shopt -s nullglob
+          dirs="scripts notebooks tests .claude/hooks"
+          targets=()
+          for d in $dirs; do [ -d "$d" ] && targets+=("$d/"); done
+          if [ "${#targets[@]}" -gt 0 ]; then ruff check "${targets[@]}"; else echo "no targets yet"; fi
+
+      - name: Compile Python
+        run: |
+          shopt -s nullglob
+          for f in scripts/*.py notebooks/*.py tests/*.py .claude/hooks/*.py; do python -m py_compile "$f"; done
+
+      - name: Validate seed CSVs (parse + header present)
+        run: |
+          python - <<'PY'
+          import csv, sys
+          from pathlib import Path
+          for f in Path("seeds").glob("*.csv"):
+              with open(f, newline="") as fh:
+                  reader = csv.DictReader(fh)
+                  header = reader.fieldnames
+                  rows = list(reader)
+              if not header:
+                  print(f"::error::{f} has no header"); sys.exit(1)
+              print(f"ok: {f} ({len(rows)} rows)")  # 0 rows is valid (e.g. map_ad_asset.csv starts empty)
+          PY
+
+      - name: Lineage contract (ADR-006 identity + ADR-008 OneLake path grammar)
+        run: python tests/lineage_contract.py
+
+      - name: Boundary contract (ADR-001/004/005/008 + v1 scope)
+        run: python tests/boundary_contract.py
+
+      - name: Validate Great Expectations JSON (if any)
+        run: |
+          shopt -s nullglob globstar
+          for f in great_expectations/**/*.json; do
+            python -c "import json,sys; json.load(open('$f'))" && echo "ok: $f"
+          done
+
+      - name: Guard — no secrets / .env committed
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::.env must not be committed"; exit 1
+          fi
+          echo "no .env tracked - ok"

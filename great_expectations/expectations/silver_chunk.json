@@ -1,0 +1,17 @@
+{
+  "expectation_suite_name": "silver_chunk",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "silver",
+    "note": "The 'unreliable narration' gate: a row can be schema-valid yet semantically wrong. Quarantine on violation, do not retry (SPEC §7 G1/G2)."
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "chunk_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_unique", "kwargs": {"column": "chunk_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "standalone_score", "min_value": 1, "max_value": 5}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "chunk_theme"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_in_set", "kwargs": {"column": "sentiment", "value_set": ["energetic", "frustrated", "aspirational", "neutral", "urgent", "calm"]}, "meta": {"severity": "HIGH", "note": "extend the enum as the taxonomy stabilizes"}},
+    {"expectation_type": "expect_table_row_count_to_be_between", "kwargs": {"min_value": 1}, "meta": {"severity": "CRITICAL"}}
+  ]
+}

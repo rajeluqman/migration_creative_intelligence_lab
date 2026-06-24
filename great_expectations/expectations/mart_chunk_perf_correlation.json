@@ -1,0 +1,14 @@
+{
+  "expectation_suite_name": "mart_chunk_perf_correlation",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "gold-mart",
+    "note": "The honesty gates as data (SPEC §6, ADR-004 G1/G3). Surfaced insight must carry framing + a valid regime; n<5 is BLOCK and excluded from any surfaced view."
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "honesty_note"}, "meta": {"severity": "CRITICAL", "why": "no consumer may render an insight without the within-winners caveat"}},
+    {"expectation_type": "expect_column_values_to_be_in_set", "kwargs": {"column": "evidence_regime", "value_set": ["BLOCK", "DIRECTIONAL", "SUGGESTIVE"]}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "n_ads", "min_value": 1}, "meta": {"severity": "HIGH", "note": "n<5 rows must be tagged BLOCK and filtered before surfacing"}}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "expectation_suite_name": "bronze_asset_raw",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "bronze",
+    "note": "Catches schema-valid-but-empty LLM output (TS-EXT-01). Verbatim JSON is immutable (ADR-003)."
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "asset_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "model_version"}, "meta": {"severity": "CRITICAL", "why": "drift attribution needs model_version stamped"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "chunk_count", "min_value": 1}, "meta": {"severity": "CRITICAL", "why": "a valid {\"chunks\": []} response passes schema but must be quarantined"}}
+  ]
+}

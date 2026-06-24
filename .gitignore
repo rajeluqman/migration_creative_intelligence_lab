@@ -1,0 +1,14 @@
+.env
+secrets/
+!secrets/.gitkeep
+venv/
+.venv/
+logs/
+data/
+*.parquet
+*.csv
+!seeds/*.csv
+great_expectations/uncommitted/
+__pycache__/
+.ipynb_checkpoints/
+*.synapse.notebook/
