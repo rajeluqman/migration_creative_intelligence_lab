@@ -1,0 +1,20 @@
+{
+  "expectation_suite_name": "bridge_ad_chunk",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "gold-performance",
+    "note": "Editor's asserted cut (ADR-004, SPEC §2). Ported from models/marts/performance/_performance.yml dbt tests (dbt dropped, ADR-008). edit_decision_list is a HAND-ENTERED seed -> the grain MUST be pinned, else a duplicate EDL row silently fans out every downstream perf mart (same bug class as the pharma stg_beta__ndc inflation). This compound-uniqueness gate is CRITICAL and was the Gold sign-off blocker.",
+    "referential": [
+      "every bridge_ad_chunk.chunk_id must exist in fact_chunk.chunk_id (asset_id resolves from it)"
+    ]
+  },
+  "expectations": [
+    {"expectation_type": "expect_compound_columns_to_be_unique", "kwargs": {"column_list": ["ad_id", "chunk_id", "position_in_ad"]}, "meta": {"severity": "CRITICAL", "why": "the grain — silent fan-out guard"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "ad_id"}, "meta": {"severity": "HIGH"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "chunk_id"}, "meta": {"severity": "HIGH"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "asset_id"}, "meta": {"severity": "HIGH", "why": "null => inner join to fact_chunk silently degraded"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "position_in_ad", "min_value": 1}, "meta": {"severity": "MEDIUM"}},
+    {"expectation_type": "expect_column_values_to_be_in_set", "kwargs": {"column": "chunk_role", "value_set": ["hook", "body", "social_proof", "cta"]}, "meta": {"severity": "HIGH"}}
+  ]
+}

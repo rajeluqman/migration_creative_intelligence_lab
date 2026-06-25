@@ -1,0 +1,15 @@
+{
+  "expectation_suite_name": "bridge_chunk_compatibility",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "gold-core",
+    "note": "Mix-and-match adjacency. Ported from models/marts/core/_core.yml dbt tests (dbt dropped, ADR-008). The chunk_id->fact_chunk FK was a dbt `relationships` test; runs as a Warehouse reconciliation query here (meta.referential).",
+    "referential": [
+      "every bridge_chunk_compatibility.chunk_id must exist in fact_chunk.chunk_id (was dbt relationships -> fact_chunk)"
+    ]
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "chunk_id"}, "meta": {"severity": "HIGH"}}
+  ]
+}

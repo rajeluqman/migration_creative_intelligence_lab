@@ -108,5 +108,36 @@ F0/Sonnet pass missed so much, and a decision on port-vs-rebuild. Outcome:
   cost-saving choice amplified it (no repo diff was ever run until the owner said "recheck").
 - **Decision:** port, not rebuild (rebuild-from-scratch would re-incur the bugs/rulings the
   sibling repo already paid for). Wrote `MIGRATION_MAP.md` (read every source file first, not
-  from memory) as the binding 28-item port checklist. Port sessions confirmed **Sonnet**, with
-  `MIGRATION_MAP.md` as the strict checklist to prevent a repeat miss.
+  from memory) as the binding 28-item port checklist.
+
+## 2026-06-24 — full code port executed (owner "buatkan", same day, on Opus)
+
+The owner overrode the earlier "defer the port until a Fabric codespace exists" sequencing and
+directed the port now, with the instruction: only the ecosystem changes to Fabric, everything
+else stays the same. Executed against MIGRATION_MAP.md, reading each sibling-repo source file
+fresh before translating (anti-shortcut rule 1). 30 new files:
+- `scripts/`: env_guard, **onelake_io (NEW — the boto3-replacement I/O layer)**, enforce_landing_ttl,
+  significance_post_step.
+- `notebooks/`: **00_load_seeds (NEW — the `dbt seed` equivalent)**, 01_ingest_drive_to_onelake,
+  02_extract_gemini, 03_silver_transform (PySpark; array fan-outs exploded in Spark, not T-SQL,
+  because Fabric Warehouse can't read Delta array columns cleanly).
+- `warehouse/core/` (7) + `warehouse/performance/` (6) — Gold T-SQL views (incl. the median →
+  `PERCENTILE_CONT` translation, `using()` → `ON`, `::cast` → `CAST`).
+- `pipelines/creative_intel_fabric.json` (Data Factory; ForEach/batchCount/retry/Wait/IfCondition
+  map of the Airflow DAG).
+- `setup.sh`, `requirements.txt`, `.env.example`, `analyses/demo_queries.sql`.
+- 5 GE suites added so the dropped dbt `_*.yml` test coverage isn't lost (dim_client, dim_asset,
+  fact_chunk, bridge_chunk_compatibility, bridge_ad_chunk — incl. the CRITICAL grain guard).
+- RETIRED (correctly NOT ported): dbt_project.yml, packages.yml, package-lock.yml,
+  profiles.yml(.example), requirements-airflow.txt, .user.yml.
+
+**Verified:** lineage + boundary contracts green; py_compile + ruff clean; GE/pipeline JSON valid;
+seeds identical to sibling repo except source_uri (s3→abfss, asset_id set md5-identical).
+**The one honest shortcut that remains, named:** none of it has RUN on a real Fabric workspace —
+PySpark API, T-SQL syntax, notebookutils.fs signatures, and the Data Factory JSON schema are
+correct-by-construction but runtime-unverified. The 131-chunk parity test is the acceptance gate.
+This was unavoidable (no Fabric workspace exists yet) and is flagged in every ported file's header
++ MIGRATION_MAP "Status" + PROJECT_STATUS, not hidden.
+
+Model note: this port ran on **Opus** (the owner was already on Opus this session), not the
+Sonnet originally planned — the owner directed "buatkan" mid-Opus-session.

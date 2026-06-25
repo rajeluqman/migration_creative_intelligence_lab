@@ -1,0 +1,17 @@
+{
+  "expectation_suite_name": "fact_chunk",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "gold-core",
+    "note": "Feature row, grain = one semantic chunk (ADR-002). Ported from models/marts/core/_core.yml dbt tests (dbt dropped, ADR-008). The asset_id->dim_asset FK was a dbt `relationships` test; runs as a Warehouse reconciliation query here (meta.referential).",
+    "referential": [
+      "every fact_chunk.asset_id must exist in dim_asset.asset_id (was dbt relationships -> dim_asset)"
+    ]
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "chunk_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_unique", "kwargs": {"column": "chunk_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_between", "kwargs": {"column": "standalone_score", "min_value": 1, "max_value": 5}, "meta": {"severity": "CRITICAL"}}
+  ]
+}

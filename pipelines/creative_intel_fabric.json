@@ -1,0 +1,121 @@
+{
+  "//": "Fabric Data Factory pipeline — ported from the sibling repo's dags/creative_intel_pipeline.py (Airflow -> Data Factory, ADR-008). Same orchestration patterns, no synchronous per-asset polling: parameterized run (client_id + drive_folder_id), Drive->Landing sync with skip-existing (cost firewall #1), ForEach over NEW assets (was Airflow .expand()), batchCount caps Gemini concurrency (was the gemini_api Pool), activity retry+backoff (was retries/retry_exponential_backoff), a Wait activity (was TimeDeltaSensorAsync), an If Condition to skip when no new assets (was AirflowSkipException). Bodies invoke the ported notebooks/scripts. RUNTIME-UNVERIFIED against a real Fabric workspace (SESSION_LOG 2026-06-24): this follows the documented Data Factory pipeline JSON shape but the exact activity schema/typeProperties must be validated on import into Fabric.",
+  "name": "creative_intel_pipeline_v1",
+  "properties": {
+    "description": "Creative Intelligence v1 pipeline (Fabric Data Factory). Manual/triggered run with parameters; mirrors DATA_MODEL.md §8 / STACK_AND_FLOW.md §2.",
+    "parameters": {
+      "client_id": {
+        "type": "string",
+        "//": "REQUIRED — client partition under landing/ (must match seeds/dim_client.csv). Empty must fail before any OneLake write (multi-client misroute guard, matches the notebook's ValueError-on-empty)."
+      },
+      "drive_folder_id": {
+        "type": "string",
+        "defaultValue": "",
+        "//": "Google Drive folder id to sync (blank = re-scan existing)."
+      }
+    },
+    "activities": [
+      {
+        "name": "sync_drive_to_landing",
+        "type": "TridentNotebook",
+        "description": "Step 1 — Drive -> OneLake landing. SHA-256 content-hash naming, skip-existing (cost firewall #1). Returns count of NEW videos landed.",
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 3,
+          "retryIntervalInSeconds": 30
+        },
+        "typeProperties": {
+          "notebook": "01_ingest_drive_to_onelake",
+          "parameters": {
+            "client_id": {"value": "@pipeline().parameters.client_id", "type": "string"},
+            "drive_folder_id": {"value": "@pipeline().parameters.drive_folder_id", "type": "string"}
+          }
+        }
+      },
+      {
+        "name": "list_new_assets",
+        "type": "TridentNotebook",
+        "description": "Step 2 — return only asset_ids in landing whose Bronze JSON does NOT yet exist (cost firewall #2 — never re-call Gemini on an already-extracted asset).",
+        "dependsOn": [{"activity": "sync_drive_to_landing", "dependencyConditions": ["Succeeded"]}],
+        "policy": {"timeout": "0.01:00:00", "retry": 2, "retryIntervalInSeconds": 30},
+        "typeProperties": {
+          "notebook": "list_new_assets",
+          "parameters": {"client_id": {"value": "@pipeline().parameters.client_id", "type": "string"}}
+        }
+      },
+      {
+        "name": "has_new_assets",
+        "type": "IfCondition",
+        "description": "Skip extraction when there are no new assets (was AirflowSkipException).",
+        "dependsOn": [{"activity": "list_new_assets", "dependencyConditions": ["Succeeded"]}],
+        "typeProperties": {
+          "expression": {
+            "value": "@greater(length(activity('list_new_assets').output.result.exitValue), 0)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "extract_chunks_per_asset",
+              "type": "ForEach",
+              "description": "One Gemini extraction per NEW asset (was Airflow .expand()). batchCount caps concurrency to the Gemini QPM budget (was the gemini_api Pool — the rate-limit guard).",
+              "typeProperties": {
+                "isSequential": false,
+                "batchCount": 2,
+                "items": {
+                  "value": "@activity('list_new_assets').output.result.exitValue",
+                  "type": "Expression"
+                },
+                "activities": [
+                  {
+                    "name": "extract_chunks",
+                    "type": "TridentNotebook",
+                    "description": "Gemini extraction for one asset; idempotent (re-running a processed asset is a no-op). Retry+backoff is the 429 guard.",
+                    "policy": {
+                      "timeout": "0.01:00:00",
+                      "retry": 5,
+                      "retryIntervalInSeconds": 60
+                    },
+                    "typeProperties": {
+                      "notebook": "02_extract_gemini",
+                      "parameters": {
+                        "asset_id": {"value": "@item()", "type": "string"},
+                        "client_id": {"value": "@pipeline().parameters.client_id", "type": "string"}
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "await_gemini_processing",
+              "type": "Wait",
+              "description": "Brief settle window (was TimeDeltaSensorAsync — the deferrable async wait).",
+              "dependsOn": [{"activity": "extract_chunks_per_asset", "dependencyConditions": ["Succeeded"]}],
+              "typeProperties": {"waitTimeInSeconds": 5}
+            },
+            {
+              "name": "build_silver",
+              "type": "TridentNotebook",
+              "description": "Bronze -> Silver Delta tables (PySpark). Was the dbt build's Silver layer.",
+              "dependsOn": [{"activity": "await_gemini_processing", "dependencyConditions": ["Succeeded"]}],
+              "policy": {"timeout": "0.01:00:00", "retry": 1, "retryIntervalInSeconds": 30},
+              "typeProperties": {
+                "notebook": "03_silver_transform",
+                "parameters": {"client_id": {"value": "@pipeline().parameters.client_id", "type": "string"}}
+              }
+            },
+            {
+              "name": "ge_validate",
+              "type": "TridentNotebook",
+              "description": "Run the Great Expectations suites (per-layer gates). Block promotion on CRITICAL fail.",
+              "dependsOn": [{"activity": "build_silver", "dependencyConditions": ["Succeeded"]}],
+              "policy": {"timeout": "0.01:00:00", "retry": 0},
+              "typeProperties": {"notebook": "ge_validate"}
+            }
+          ]
+        }
+      }
+    ],
+    "annotations": ["creative-intelligence", "v1", "ADR-008"]
+  }
+}

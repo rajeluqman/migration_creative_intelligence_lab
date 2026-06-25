@@ -8,14 +8,18 @@
 > is repeated here; this checkpoint only covers what changed in **this** repo.
 
 ## Where we are
-**Session A (F0 — governance + apparatus migration) is complete, 2026-06-24.** Cloned fresh
-from `creative_intelligence_lab`, copied every apparatus verbatim (debate/, learning/, GE,
-seeds, the 8-agent roster, logical architecture docs), then wrote `ADR-008` (the migration
-decision record) and surgically updated every doc/script/hook/agent that made a now-false
-stack claim — never restructured anything, per the owner's explicit instruction. No code has
-been *built* yet: `notebooks/`, `warehouse/`, `pipelines/`, `scripts/`, `requirements.txt`, and
-`setup.sh` do not exist yet (F1–F3, see below). This checkpoint is a documentation/governance
-milestone, not a working pipeline.
+**Code port DONE (statically), 2026-06-24** — `notebooks/`, `warehouse/`, `pipelines/`,
+`scripts/`, `requirements.txt`, `.env.example`, `setup.sh`, `analyses/` all now exist. The owner
+directed the full port this turn ("buatkan"); all 38 files the sibling repo had and this repo
+lacked are now either ported to a Fabric equivalent or intentionally RETIRED (dbt/airflow config).
+**Honest caveat:** nothing has RUN on a real Fabric workspace yet — every artifact is statically
+validated (contracts + py_compile + ruff + JSON-valid all green) but **runtime-unverified**; the
+131-chunk parity test is the acceptance gate once a workspace exists. See `MIGRATION_MAP.md`
+"Status" for the file-by-file record and `SESSION_LOG.md` 2026-06-24 for the honest accounting.
+
+Earlier milestone — **Session A (F0 — governance + apparatus migration), 2026-06-24:** cloned
+fresh from `creative_intelligence_lab`, copied every apparatus verbatim, wrote `ADR-008`, and
+surgically updated every doc/hook/agent that made a now-false stack claim.
 
 ## What's done (F0 — this session)
 - **ADR-008** (`architecture/ADR-008-migrate-to-microsoft-fabric.md`) — the migration decision:
@@ -147,10 +151,13 @@ outright, not just flagged after the fact). **The owner must push these commits 
 correctly-scoped credentials).
 
 ## Next step when resuming
-1. **Owner pushes the 2 pending local commits** (gap-fix patch + this SESSION_LOG round) —
-   agent cannot do this (see "Push status" above).
-2. Owner creates the Fabric workspace + codespace themselves, then F1 begins — work the port
-   checklist above file-by-file, reading each sibling-repo source file before translating it.
+1. Owner opens a Fabric workspace/codespace, attaches the Lakehouse, and runs the **parity
+   test** (MIGRATION_MAP.md step 5): run notebooks 00→03 on the same Drive folder, build the
+   Gold views + GE suites, and confirm the 131-chunk / 19-asset baseline reproduces. Any
+   diff beyond float-rounding/order = a port bug to fix (the code is runtime-unverified).
+2. Fix whatever the first real run surfaces (PySpark API, T-SQL syntax, `notebookutils.fs`
+   signatures, the Data Factory JSON schema) — these are the items flagged runtime-unverified.
+3. Then F4 (serving: Power BI Direct Lake + Copilot veneer) once Gold has real rows.
 
 ## Standalone status
 Self-contained, same as the sibling repo — `CLAUDE.md` + 8 agents present; no parent/gym

@@ -1,0 +1,13 @@
+# Local/dev deps for the scripts + notebooks (ADR-008, Fabric build).
+# Bronze/Silver compute runs IN the Fabric workspace (PySpark provided by the runtime — NOT
+# pinned here); these are what the ingest/extract/post-step Python needs to run or lint.
+# Dropped vs the sibling repo: dbt-duckdb, duckdb (dbt is dropped), boto3 (storage is OneLake,
+# not S3 — boundary_contract.py bans boto3).
+google-genai>=2.0                 # current SDK (google-generativeai is fully EOL — see notebooks/02_extract_gemini.py)
+google-api-python-client>=2.100   # Drive API v3 (notebooks/01_ingest_drive_to_onelake.py)
+google-auth>=2.23                 # service-account credentials for headless Drive auth
+pandas>=2.0
+scipy>=1.11                       # significance post-step (Mann-Whitney U + Bonferroni)
+great-expectations>=0.18          # per-layer suites run in Fabric notebooks
+tqdm>=4.66
+ruff>=0.6

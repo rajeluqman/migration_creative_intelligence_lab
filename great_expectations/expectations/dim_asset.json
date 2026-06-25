@@ -1,0 +1,19 @@
+{
+  "expectation_suite_name": "dim_asset",
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.18.x",
+    "layer": "gold-core",
+    "note": "Node table (ADR-002/006). Ported from models/marts/core/_core.yml dbt tests (dbt dropped, ADR-008). The client_id->dim_client and (downstream) asset_id FKs were dbt `relationships` tests; in this stack they run as a Warehouse reconciliation query (see meta.referential), since a single-table GE suite cannot express a cross-table FK.",
+    "referential": [
+      "every dim_asset.client_id must exist in dim_client.client_id (was dbt relationships -> dim_client)"
+    ]
+  },
+  "expectations": [
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "asset_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_be_unique", "kwargs": {"column": "asset_id"}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "client_id"}, "meta": {"severity": "CRITICAL", "why": "tenancy boundary (ADR-006)"}},
+    {"expectation_type": "expect_column_values_to_be_in_set", "kwargs": {"column": "asset_type", "value_set": ["RAW", "EDITED"]}, "meta": {"severity": "CRITICAL"}},
+    {"expectation_type": "expect_column_values_to_not_be_null", "kwargs": {"column": "ingested_at"}, "meta": {"severity": "HIGH", "why": "provenance, immutable write-once (ADR-006)"}}
+  ]
+}
